@@ -1,0 +1,254 @@
+using Agents
+using Random: Xoshiro
+using Statistics: mean
+using Distributions: Normal
+#using CSV
+#using DataFrames
+
+#Population size
+POPULATION_SIZE = 100
+#Probability epsilon to end game (10%)
+PROBABILITY_TO_END_GAME = 0.1
+#Number of centipede games per player per generation
+NUMBER_GAMES_PER_GENERATION = 100
+#Game parameters
+b = 4.0
+d = 3.0
+
+##################################################
+#                   DEFINE AGENTS                #
+##################################################
+
+"""
+Define agents 
+The properties of the agents are:
+`z_value`: probability to continue game. (Propensity to transmit)
+`scores`: array of scores from the games the player was involved in during a generation
+`fitness`: player's fitness according to average array of scores in a generation
+"""
+@agent Player NoSpaceAgent begin
+    z_value::Float64
+    scores::Vector{Float64}
+    fitness::Float64
+end
+
+##################################################
+#                    DEFINE MODEL                #
+##################################################
+
+"""
+Define and initialise the model
+    init_players(; initilisation scores, initilisation fitness, seed,)
+Note: scores are initialised with 0.0 as first element to avoid empty arrays
+"""
+function init_players(seed, all_properties; scores=Float64[0.0], fitness=1.0,)
+    #Define random number generator
+    rng = Xoshiro(seed)
+    #Define model
+    model = StandardABM(Player; properties = all_properties, rng)
+
+    #Add agents to the model with initialization properties
+    for i in 1:POPULATION_SIZE
+        #z value for each player is initialised randomly from uniform distribution
+        #z_value=rand(rng)
+        z_value=rand(rng,0:0.1:1)
+        add_agent!(model, z_value, scores, fitness)
+    end
+    return model
+end
+
+##################################################
+#               TIME EVOLUTION ABM               #
+##################################################
+
+#----------------------------------
+#------------Player step-----------
+#----------------------------------
+
+"""
+Players play the centipede game
+    centipede_game(current_player, model, game_array)
+Each player, namely `current_player`, starts its own centipede `game_array`
+* Prob. 1-z the game ends and the current player plays Break/NoTransmit
+* Prob. epsilon the game ends (avoid infinite loops/games)
+* Prob. z the game continues and random player is added to the game array, where according to its z could play Transmit or not.
+The function updates the scores of the players involved in the current centipede game.
+    If a player was not involved in the game, its scores are not modified.
+"""
+function centipede_game!(current_player, model, game_array)
+    push!(game_array, current_player.id)
+    n = length(game_array)
+    random_num_z = rand(model.rng)
+
+    #game ends with prob. 1-z
+    if random_num_z > current_player.z_value
+
+        #break_me_payoff = b*(d^(n-1)) --- exponential
+        break_me_payoff = b+(d*(n-1))
+        push!(current_player.scores, break_me_payoff)
+
+        #break_others_payoff = (d^(n-1)) --- exponential
+        break_others_payoff = (d*(n-1))
+        if n > 1
+            #Last one in array is the one that breaks transmission
+            for i in game_array[1:end-1]
+                push!(model[i].scores, break_others_payoff)
+            end  
+        end
+    
+    #game continues with prob. z
+    else
+        #If game stops with probability epsilon
+        random_num_end = rand(model.rng)
+        if random_num_end <= PROBABILITY_TO_END_GAME
+            #Everyone in the game gets
+            #all_end_payoff = d^n  --- exponential
+            all_end_payoff = d*n
+            for i in game_array
+                push!(model[i].scores, all_end_payoff)
+            end
+        else
+        #If game doesn't come to an end, we add another player. Game continues.
+            #Elements in allids(model) that are not in game array
+            available_players_ids = setdiff(allids(model), game_array)
+
+            #if all players had played, end game
+            if isempty(available_players_ids) == true
+                all_end_payoff = d^n
+                for i in game_array
+                    push!(model[i].scores, all_end_payoff)
+                end 
+            else
+                #else continue game
+                random_player_id = rand(model.rng, available_players_ids)
+                centipede_game!(model[random_player_id], model, game_array)
+            end
+        end
+    end
+    #If you didnt play, nothing happens to your score
+end
+
+#---------MUTATION-----------
+
+"""
+Mutation to a random local z value
+    mutate_local!(player, model)
+A player could change its z value to random local mutation with probability `mu`
+"""
+function mutate_local!(player, model)
+    if rand(model.rng) < model.mu
+        change_to_local_mutation!(player,model)
+    end
+end
+
+"""
+Change player's z value to a local mutation
+    change_to_local_mutation!(player, model)
+A local mutation is drawn from a normal distribution with mean equal to the player's z value and standard deviation equal to 0.1
+If the local mutation is out of the [0,1] interval, another value is drawn from the distribution
+"""
+function change_to_local_mutation!(player, model)
+    #new_z_value = rand(model.rng, Normal(player.z_value, 0.1))
+    new_z_value = round(rand(model.rng, Normal(player.z_value, 0.1)),digits=1)
+    if new_z_value >= 0 && new_z_value <= 1
+        player.z_value = new_z_value
+    else
+        change_to_local_mutation!(player, model)
+    end
+end
+
+"""
+Mutation to a random z value
+    mutate_global!(player, model)
+A player could change its z value to any other random value with probability `mu`
+"""
+function mutate_global!(player, model)
+    if rand(model.rng) < model.mu
+        #player.z_value = rand(model.rng)
+        player.z_value = rand(model.rng,0:0.1:1)
+    end
+end
+
+#---------MODEL STEP-----------
+
+"""
+Time evolution of ABM (players)
+    player_step!(player, model)
+Mutate (optional) and then play centipede games
+In each ABM step, all players start one centipede game. (Each player is at least in one game per generation)
+The number of centipede games played is equal to the population size. WE COULD CHANGE THIS
+"""
+function player_step!(player, model)
+    mutate_local!(player, model)
+    #mutate_global!(player, model)
+
+    #Array with information about the game. Length is proportional to round reached
+    # game_array store the ids of players who participated in the centipede game
+    for i in 1:NUMBER_GAMES_PER_GENERATION
+        game_array = Int64[]
+        centipede_game!(player, model, game_array)
+    end
+end
+
+#----------------------------------
+#------------Model step-----------
+#----------------------------------
+
+#---------FITNESS MAPPING-----------
+
+"""
+Calculate fitness for all agents
+    calculate_fitness_linear(model)
+Compute fitness values via linear mapping
+"""
+function calculate_fitness_linear(model)
+    sum_all_average_payoffs = sum([mean(agent.scores) for agent in allagents(model)])
+    for agent in allagents(model)
+        average_payoff_agent = mean(agent.scores)
+
+        #Payoff normalisation
+        payoff_agent = average_payoff_agent/sum_all_average_payoffs
+
+        #Set fitness for all agents
+        agent.fitness = 1 - model.beta + model.beta*payoff_agent
+        #Reset scores for new generation round
+        agent.scores = Float64[0.0]
+    end
+end
+
+
+"""
+Calculate fitness for all agents
+    calculate_fitness_exponential(model)
+Compute fitness values via exponential mapping
+Normalisation of average payoffs is performed to avoid numerical instability (explosion of exponential function)
+"""
+function calculate_fitness_exponential(model)
+    sum_all_average_payoffs = sum([mean(agent.scores) for agent in allagents(model)])
+    for agent in allagents(model)
+        average_payoff_agent = mean(agent.scores)
+        #Payoff normalisation
+        payoff_agent = average_payoff_agent/sum_all_average_payoffs
+        #Set fitness for all agents
+        agent.fitness = exp(model.beta*payoff_agent)
+        #Reset scores for new generation round
+        agent.scores = Float64[0.0]
+    end
+end
+
+#-------------MODEL STEP------------
+
+"""
+Time evolution of ABM (model)
+    model_WF_step!(model)
+After a round where all players played at least one game, fitness is computed.
+Afterwards, the population undergoes sampling with replacement according to the Wright-Fisher model.
+"""
+function model_WF_step!(model)
+    #for agent in allagents(model)
+    #        data = DataFrame("beta"=>[model.beta],"z_value" => [agent.z_value], "mean_score"=>[mean(agent.scores)])
+    #        CSV.write(datadir("payoffs_"*string(model.beta)*".csv"), data, append=true)
+    #end
+    calculate_fitness_linear(model)
+    sample!(model, nagents(model), :fitness)
+end
