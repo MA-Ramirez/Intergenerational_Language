@@ -15,6 +15,11 @@ NUMBER_GAMES_PER_GENERATION = 100
 b = 4.0
 d = 3.0
 
+#Internal simulation states
+const INITIAL_SCORE = 0.0
+const INITIAL_COUNT = 0
+const INITIAL_FITNESS = 0.0
+
 ##################################################
 #                   DEFINE AGENTS                #
 ##################################################
@@ -23,12 +28,14 @@ d = 3.0
 Define agents 
 The properties of the agents are:
 `z_value`: probability to continue game. (Propensity to transmit)
-`scores`: array of scores from the games the player was involved in during a generation
+`scores_sum`: each player is part of n games. Sum scores of each player for all the games they took place in.
+`scores_count`: counts the amount of games the player had a score registered. 
 `fitness`: player's fitness according to average array of scores in a generation
 """
 @agent Player NoSpaceAgent begin
     z_value::Float64
-    scores::Vector{Float64}
+    scores_sum::Float64
+    scores_count::Int
     fitness::Float64
 end
 
@@ -38,21 +45,19 @@ end
 
 """
 Define and initialise the model
-    init_players(; initilisation scores, initilisation fitness, seed,)
-Note: scores are initialised with 0.0 as first element to avoid empty arrays
+    init_players(seed, all_properties)
+`seed`: random number generator seed
+`all_properties`: model-level properties 
 """
-function init_players(seed, all_properties; scores=Float64[0.0], fitness=1.0,)
-    #Define random number generator
-    rng = Xoshiro(seed)
+function init_players(seed, all_properties)
     #Define model
-    model = StandardABM(Player; properties = all_properties, rng)
+    model = StandardABM(Player; properties = all_properties, rng=Xoshiro(seed))
 
     #Add agents to the model with initialization properties
-    for i in 1:POPULATION_SIZE
-        #z value for each player is initialised randomly from uniform distribution
-        #z_value=rand(rng)
-        z_value=rand(rng,0:0.1:1)
-        add_agent!(model, z_value, scores, fitness)
+    for _ in 1:POPULATION_SIZE
+        #z value for each player is initialised randomly from (discretized) uniform distribution
+        z_value=rand(model.rng,0:0.1:1)
+        add_agent!(model, z_value, INITIAL_SCORE, INITIAL_COUNT, INITIAL_FITNESS)
     end
     return model
 end
@@ -69,30 +74,38 @@ end
 Players play the centipede game
     centipede_game(current_player, model, game_array)
 Each player, namely `current_player`, starts its own centipede `game_array`
-* Prob. 1-z the game ends and the current player plays Break/NoTransmit
+* Prob. 1-z the game ends and the current player plays NoTransmit
 * Prob. epsilon the game ends (avoid infinite loops/games)
 * Prob. z the game continues and random player is added to the game array, where according to its z could play Transmit or not.
-The function updates the scores of the players involved in the current centipede game.
-    If a player was not involved in the game, its scores are not modified.
+The function updates the `scores_sum` and `scores_count` of the players involved in the current centipede game.
+    If a player was not involved in the game, their scores are not modified.
 """
 function centipede_game!(current_player, model, game_array)
     push!(game_array, current_player.id)
     n = length(game_array)
     random_num_z = rand(model.rng)
 
+    #TO-DO: COUNT ROUNDS PER CENTIPEDE
+
     #game ends with prob. 1-z
     if random_num_z > current_player.z_value
 
-        #break_me_payoff = b*(d^(n-1)) --- exponential
-        break_me_payoff = b+(d*(n-1))
-        push!(current_player.scores, break_me_payoff)
+        #notransmit_me_payoff = b*(d^(n-1)) --- exponential
 
-        #break_others_payoff = (d^(n-1)) --- exponential
-        break_others_payoff = (d*(n-1))
+        notransmit_me_payoff = b+(d*(n-1))
+        current_player.scores_sum += notransmit_me_payoff
+        current_player.scores_count += 1
+        #push!(current_player.scores, notransmit_me_payoff)
+
         if n > 1
+            #notransmit_others_payoff = (d^(n-1)) --- exponential
+            notransmit_others_payoff = (d*(n-1))
+
             #Last one in array is the one that breaks transmission
             for i in game_array[1:end-1]
-                push!(model[i].scores, break_others_payoff)
+                model[i].scores_sum += notransmit_others_payoff
+                model[i].scores_count += 1
+                #push!(model[i].scores, notransmit_others_payoff)
             end  
         end
     
@@ -105,7 +118,9 @@ function centipede_game!(current_player, model, game_array)
             #all_end_payoff = d^n  --- exponential
             all_end_payoff = d*n
             for i in game_array
-                push!(model[i].scores, all_end_payoff)
+                model[i].scores_sum += all_end_payoff
+                model[i].scores_count += 1
+                #push!(model[i].scores, all_end_payoff)
             end
         else
         #If game doesn't come to an end, we add another player. Game continues.
@@ -116,7 +131,9 @@ function centipede_game!(current_player, model, game_array)
             if isempty(available_players_ids) == true
                 all_end_payoff = d^n
                 for i in game_array
-                    push!(model[i].scores, all_end_payoff)
+                    model[i].scores_sum += all_end_payoff
+                    model[i].scores_count += 1
+                    #push!(model[i].scores, all_end_payoff)
                 end 
             else
                 #else continue game
@@ -202,9 +219,9 @@ Calculate fitness for all agents
 Compute fitness values via linear mapping
 """
 function calculate_fitness_linear(model)
-    sum_all_average_payoffs = sum([mean(agent.scores) for agent in allagents(model)])
+    sum_all_average_payoffs = sum((agent.scores_sum/agent.scores_count) for agent in allagents(model))
     for agent in allagents(model)
-        average_payoff_agent = mean(agent.scores)
+        average_payoff_agent = (agent.scores_sum/agent.scores_count)
 
         #Payoff normalisation
         payoff_agent = average_payoff_agent/sum_all_average_payoffs
@@ -212,7 +229,8 @@ function calculate_fitness_linear(model)
         #Set fitness for all agents
         agent.fitness = 1 - model.beta + model.beta*payoff_agent
         #Reset scores for new generation round
-        agent.scores = Float64[0.0]
+        agent.scores_sum = 0.0
+        agent.scores_count = 0
     end
 end
 
@@ -224,15 +242,16 @@ Compute fitness values via exponential mapping
 Normalisation of average payoffs is performed to avoid numerical instability (explosion of exponential function)
 """
 function calculate_fitness_exponential(model)
-    sum_all_average_payoffs = sum([mean(agent.scores) for agent in allagents(model)])
+    sum_all_average_payoffs = sum((agent.scores_sum/agent.scores_count) for agent in allagents(model))
     for agent in allagents(model)
-        average_payoff_agent = mean(agent.scores)
+        average_payoff_agent = (agent.scores_sum/agent.scores_count)
         #Payoff normalisation
         payoff_agent = average_payoff_agent/sum_all_average_payoffs
         #Set fitness for all agents
         agent.fitness = exp(model.beta*payoff_agent)
         #Reset scores for new generation round
-        agent.scores = Float64[0.0]
+        agent.scores_sum = 0.0
+        agent.scores_count = 0
     end
 end
 
