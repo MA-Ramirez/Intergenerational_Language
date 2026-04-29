@@ -47,6 +47,7 @@ Base.@kwdef mutable struct Model_Properties
     population_size::Int
     probability_to_end_game::Float64
     number_games_per_generation::Int
+    game_array::Vector{Int} = Int[] 
 end
 
 ##################################################
@@ -63,6 +64,9 @@ function init_players(seed, all_properties::Model_Properties)
 
     #Define model
     model = StandardABM(Player; properties = all_properties, rng=Xoshiro(seed))
+
+    #Preallocate game array (allocate once ever). Capacity of game_array persists across all games and WF stages
+    sizehint!(all_properties.game_array, all_properties.population_size)
 
     #Add agents to the model with initialization properties
     for _ in 1:all_properties.population_size
@@ -93,7 +97,6 @@ The function updates the `scores_sum` and `scores_count` of the players involved
 This is the main hot loop
 """
 function centipede_game!(current_player, model, game_array)
-
     #Bind locals once so the compiler specializes the inner arithmetic
     b = model.b
     d = model.d
@@ -220,8 +223,8 @@ function player_step!(player, model)
     #Array with information about the game. Length is proportional to round reached
     # game_array store the ids of players who participated in the centipede game
     for i in 1:model.number_games_per_generation
-        game_array = Int64[]
-        centipede_game!(player, model, game_array)
+        empty!(model.game_array)
+        centipede_game!(player, model, model.game_array)
     end
 end
 
