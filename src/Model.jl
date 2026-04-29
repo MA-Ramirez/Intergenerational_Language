@@ -237,6 +237,9 @@ Calculate fitness for all agents
 Compute fitness values via linear mapping
 """
 function calculate_fitness_linear(model)
+    #Bind locals once so the compiler specializes the inner arithmetic
+    beta = model.beta
+    
     sum_all_average_payoffs = sum((agent.scores_sum/agent.scores_count) for agent in allagents(model))
     for agent in allagents(model)
         average_payoff_agent = (agent.scores_sum/agent.scores_count)
@@ -245,7 +248,7 @@ function calculate_fitness_linear(model)
         payoff_agent = average_payoff_agent/sum_all_average_payoffs
 
         #Set fitness for all agents
-        agent.fitness = 1 - model.beta + model.beta*payoff_agent
+        agent.fitness = 1 - beta + beta*payoff_agent
         #Reset scores for new generation round
         agent.scores_sum = 0.0
         agent.scores_count = 0
@@ -260,13 +263,16 @@ Compute fitness values via exponential mapping
 Normalisation of average payoffs is performed to avoid numerical instability (explosion of exponential function)
 """
 function calculate_fitness_exponential(model)
+    #Bind locals once so the compiler specializes the inner arithmetic
+    beta = model.beta
+
     sum_all_average_payoffs = sum((agent.scores_sum/agent.scores_count) for agent in allagents(model))
     for agent in allagents(model)
         average_payoff_agent = (agent.scores_sum/agent.scores_count)
         #Payoff normalisation
         payoff_agent = average_payoff_agent/sum_all_average_payoffs
         #Set fitness for all agents
-        agent.fitness = exp(model.beta*payoff_agent)
+        agent.fitness = exp(beta*payoff_agent)
         #Reset scores for new generation round
         agent.scores_sum = 0.0
         agent.scores_count = 0
