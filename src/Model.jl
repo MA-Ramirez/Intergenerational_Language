@@ -2,18 +2,6 @@ using Agents
 using Random: Xoshiro
 using Statistics: mean
 using Distributions: Normal
-#using CSV
-#using DataFrames
-
-#Population size
-POPULATION_SIZE = 100
-#Probability epsilon to end game (10%)
-PROBABILITY_TO_END_GAME = 0.1
-#Number of centipede games per player per generation
-NUMBER_GAMES_PER_GENERATION = 100
-#Game parameters
-b = 4.0
-d = 3.0
 
 #Internal simulation states
 const INITIAL_SCORE = 0.0
@@ -39,6 +27,28 @@ The properties of the agents are:
     fitness::Float64
 end
 
+"""
+Define model properties
+The properties of the model are:
+`beta`: selection intensity - EvoDyn
+`mu`: mutation rate/probability - EvoDyn
+`b`: relative advantage dominant language over heritage language - GT
+`d`: long-term incremental benefit - GT
+`population size`: population size of the WF model dynamics (part of `init_players`) - EvoDyn
+`probability_to_end_game`: probability to end centipede due to external reasons (part of `centipede_game!`)
+`number_games_per_generation`: number of games per strategy per WF trimming stage (part of `player_step!`)
+Note: custom mutable struct is used to avoid type instability when values are not all of the same type.
+"""
+Base.@kwdef mutable struct Model_Properties
+    beta::Float64
+    mu::Float64
+    b::Float64
+    d::Float64
+    population_size::Int
+    probability_to_end_game::Float64
+    number_games_per_generation::Int
+end
+
 ##################################################
 #                    DEFINE MODEL                #
 ##################################################
@@ -49,12 +59,13 @@ Define and initialise the model
 `seed`: random number generator seed
 `all_properties`: model-level properties 
 """
-function init_players(seed, all_properties)
+function init_players(seed, all_properties::Model_Properties)
+
     #Define model
     model = StandardABM(Player; properties = all_properties, rng=Xoshiro(seed))
 
     #Add agents to the model with initialization properties
-    for _ in 1:POPULATION_SIZE
+    for _ in 1:all_properties.population_size
         #z value for each player is initialised randomly from (discretized) uniform distribution
         z_value=rand(model.rng,0:0.1:1)
         add_agent!(model, z_value, INITIAL_SCORE, INITIAL_COUNT, INITIAL_FITNESS)
@@ -79,8 +90,15 @@ Each player, namely `current_player`, starts its own centipede `game_array`
 * Prob. z the game continues and random player is added to the game array, where according to its z could play Transmit or not.
 The function updates the `scores_sum` and `scores_count` of the players involved in the current centipede game.
     If a player was not involved in the game, their scores are not modified.
+This is the main hot loop
 """
 function centipede_game!(current_player, model, game_array)
+
+    #Bind locals once so the compiler specializes the inner arithmetic
+    b = model.b
+    d = model.d
+    probability_to_end_game = model.probability_to_end_game
+
     push!(game_array, current_player.id)
     n = length(game_array)
     random_num_z = rand(model.rng)
@@ -113,7 +131,7 @@ function centipede_game!(current_player, model, game_array)
     else
         #If game stops with probability epsilon
         random_num_end = rand(model.rng)
-        if random_num_end <= PROBABILITY_TO_END_GAME
+        if random_num_end <= probability_to_end_game
             #Everyone in the game gets
             #all_end_payoff = d^n  --- exponential
             all_end_payoff = d*n
@@ -201,7 +219,7 @@ function player_step!(player, model)
 
     #Array with information about the game. Length is proportional to round reached
     # game_array store the ids of players who participated in the centipede game
-    for i in 1:NUMBER_GAMES_PER_GENERATION
+    for i in 1:model.number_games_per_generation
         game_array = Int64[]
         centipede_game!(player, model, game_array)
     end
