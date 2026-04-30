@@ -37,6 +37,7 @@ The properties of the model are:
 `population size`: population size of the WF model dynamics (part of `init_players`) - EvoDyn
 `probability_to_end_game`: probability to end centipede due to external reasons (part of `centipede_game!`)
 `number_games_per_generation`: number of games per strategy per WF trimming stage (part of `player_step!`)
+`game_array`: tracker. Keeps track of agent ids in a single centipede game. Starts empty, it is changed via simulation
 Note: custom mutable struct is used to avoid type instability when values are not all of the same type.
 """
 Base.@kwdef mutable struct Model_Properties
@@ -123,12 +124,13 @@ function centipede_game!(current_player, model, game_array)
             notransmit_others_payoff = (d*(n-1))
 
             #Last one in array is the one that breaks transmission
-            for i in game_array[1:end-1]
-                model[i].scores_sum += notransmit_others_payoff
-                model[i].scores_count += 1
+            for i in 1:length(game_array)-1
+                id_agent = game_array[i]
+                model[id_agent].scores_sum += notransmit_others_payoff
+                model[id_agent].scores_count += 1
                 #push!(model[i].scores, notransmit_others_payoff)
-            end  
-        end
+            end
+        end                                                                                            
     
     #game continues with prob. z
     else
