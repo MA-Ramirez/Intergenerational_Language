@@ -11,15 +11,12 @@ const B = 4.0
 const D = 3.0
 
 const POPULATION_SIZE = 100
-#Probability epsilon to end game (10%)
-const PROBABILITY_TO_END_GAME = 0.1
 #number of games per strategy per WF trimming/tournament stage
 const NUMBER_GAMES_PER_GENERATION = 100
 
 # Create a model
 model = init_players(42, Model_Properties(; beta=BETA, mu=MU, b=B, d=D, 
-                            population_size=POPULATION_SIZE, 
-                            probability_to_end_game=PROBABILITY_TO_END_GAME, 
+                            population_size=POPULATION_SIZE,
                             number_games_per_generation=NUMBER_GAMES_PER_GENERATION))
 player = model[1]
 
@@ -34,11 +31,9 @@ using BenchmarkTools
 println("Simulation engine")
 @btime centipede_game!($player, $model, Int64[])
 
-
 # Create a model
 model = init_players(42, Model_Properties(; beta=BETA, mu=MU, b=B, d=D, 
-                            population_size=POPULATION_SIZE, 
-                            probability_to_end_game=PROBABILITY_TO_END_GAME, 
+                            population_size=POPULATION_SIZE,
                             number_games_per_generation=NUMBER_GAMES_PER_GENERATION))
 player = model[1]
 # Full player step (mutation + 100 games)
@@ -47,8 +42,7 @@ println("Player step")
 
 # Create a model
 model = init_players(42, Model_Properties(; beta=BETA, mu=MU, b=B, d=D, 
-                            population_size=POPULATION_SIZE, 
-                            probability_to_end_game=PROBABILITY_TO_END_GAME, 
+                            population_size=POPULATION_SIZE,
                             number_games_per_generation=NUMBER_GAMES_PER_GENERATION))
 player = model[1]
 # Fitness step (once per generation)
@@ -58,8 +52,7 @@ println("Calculate fitness linear")
 
 # Create a model
 model = init_players(42, Model_Properties(; beta=BETA, mu=MU, b=B, d=D, 
-                            population_size=POPULATION_SIZE, 
-                            probability_to_end_game=PROBABILITY_TO_END_GAME, 
+                            population_size=POPULATION_SIZE,
                             number_games_per_generation=NUMBER_GAMES_PER_GENERATION))
 player = model[1]
 # Quick allocation probe

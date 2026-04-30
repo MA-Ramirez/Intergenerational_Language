@@ -35,7 +35,6 @@ The properties of the model are:
 `b`: relative advantage dominant language over heritage language - GT
 `d`: long-term incremental benefit - GT
 `population size`: population size of the WF model dynamics (part of `init_players`) - EvoDyn
-`probability_to_end_game`: probability to end centipede due to external reasons (part of `centipede_game!`)
 `number_games_per_generation`: number of games per strategy per WF trimming stage (part of `player_step!`)
 `game_array`: tracker. Keeps track of agent ids in a single centipede game. Starts empty, it is changed via simulation
 Note: custom mutable struct is used to avoid type instability when values are not all of the same type.
@@ -46,7 +45,6 @@ Base.@kwdef mutable struct Model_Properties
     b::Float64
     d::Float64
     population_size::Int
-    probability_to_end_game::Float64
     number_games_per_generation::Int
     game_array::Vector{Int} = Int[] 
 end
@@ -101,52 +99,51 @@ function centipede_game!(current_player, model, game_array)
     #Bind locals once so the compiler specializes the inner arithmetic
     b = model.b
     d = model.d
-    probability_to_end_game = model.probability_to_end_game
+    #probability_to_end_game = model.probability_to_end_game
+    population_size = model.population_size
 
-    push!(game_array, current_player.id)
-    n = length(game_array)
-    random_num_z = rand(model.rng)
+    round_counter = 1 
 
-    #TO-DO: COUNT ROUNDS PER CENTIPEDE
+    while round_counter < population_size
+        push!(game_array, current_player.id)
+        n = length(game_array)
+        random_num_z = rand(model.rng)
 
-    #game ends with prob. 1-z
-    if random_num_z > current_player.z_value
+        #TO-DO: COUNT ROUNDS PER CENTIPEDE
 
-        #notransmit_me_payoff = b*(d^(n-1)) --- exponential
+        #GAME ENDED BY PLAYER - NO TRANSMIT 
+        # (no transmit with prob. 1-z)
+        if random_num_z > current_player.z_value
 
-        notransmit_me_payoff = b+(d*(n-1))
-        current_player.scores_sum += notransmit_me_payoff
-        current_player.scores_count += 1
-        #push!(current_player.scores, notransmit_me_payoff)
+            #SET PAYOFFS NO TRANSMITTER
+            #notransmit_me_payoff = b*(d^(n-1)) --- exponential
+            notransmit_me_payoff = b+(d*(n-1))
+            current_player.scores_sum += notransmit_me_payoff
+            current_player.scores_count += 1
+                #push!(current_player.scores, notransmit_me_payoff)
 
-        if n > 1
-            #notransmit_others_payoff = (d^(n-1)) --- exponential
-            notransmit_others_payoff = (d*(n-1))
+            #SET PAYOFFS OTHERS GIVEN NO TRANSMITTER DECISION
+            if n > 1
+                #notransmit_others_payoff = (d^(n-1)) --- exponential
+                notransmit_others_payoff = (d*(n-1))
 
-            #Last one in array is the one that breaks transmission
-            for i in 1:length(game_array)-1
-                id_agent = game_array[i]
-                model[id_agent].scores_sum += notransmit_others_payoff
-                model[id_agent].scores_count += 1
-                #push!(model[i].scores, notransmit_others_payoff)
+                #Last one in array is the one that breaks transmission
+                for i in 1:length(game_array)-1
+                    id_agent = game_array[i]
+                    model[id_agent].scores_sum += notransmit_others_payoff
+                    model[id_agent].scores_count += 1
+                        #push!(model[i].scores, notransmit_others_payoff)
+                end
             end
-        end                                                                                            
-    
-    #game continues with prob. z
-    else
-        #If game stops with probability epsilon
-        random_num_end = rand(model.rng)
-        if random_num_end <= probability_to_end_game
-            #Everyone in the game gets
-            #all_end_payoff = d^n  --- exponential
-            all_end_payoff = d*n
-            for i in game_array
-                model[i].scores_sum += all_end_payoff
-                model[i].scores_count += 1
-                #push!(model[i].scores, all_end_payoff)
-            end
-        else
-        #If game doesn't come to an end, we add another player. Game continues.
+            #GAME ENDS
+            break                                                                                           
+        
+        #GAME CONTINUES - TRANSMIT
+        # (transmit with prob. z)
+        else 
+            #If game continues, we add another player
+
+            #ADDITION OF NEW PLAYER
             #Elements in allids(model) that are not in game array
             available_players_ids = setdiff(allids(model), game_array)
 
@@ -157,15 +154,27 @@ function centipede_game!(current_player, model, game_array)
                     model[i].scores_sum += all_end_payoff
                     model[i].scores_count += 1
                     #push!(model[i].scores, all_end_payoff)
-                end 
+                end
+                #This could be redesigned, as we have block outside of while
+                break 
             else
                 #else continue game
                 random_player_id = rand(model.rng, available_players_ids)
-                centipede_game!(model[random_player_id], model, game_array)
+                current_player = model[random_player_id]
             end
         end
+        round_counter += 1
+        #If you didnt play, nothing happens to your score
     end
-    #If you didnt play, nothing happens to your score
+
+    #THE CENTIPEDE REACHES FULL LENGTH = POPULATION SIZE
+    # Payoffs of all players are assigned for end round
+    all_end_payoff = d*population_size
+    for i in game_array
+        model[i].scores_sum += all_end_payoff
+        model[i].scores_count += 1
+            #push!(model[i].scores, all_end_payoff)
+    end
 end
 
 #---------MUTATION-----------
