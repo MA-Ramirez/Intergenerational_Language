@@ -1,7 +1,8 @@
 using Agents
 using Random: Xoshiro
-using Statistics: mean
-using Distributions: Normal
+#using Statistics: mean
+using Distributions: Normal, truncated, pdf
+using StatsBase: Weights, sample 
 
 #Internal simulation states
 const INITIAL_SCORE = 0.0
@@ -194,16 +195,20 @@ end
 Change player's z value to a local mutation
     change_to_local_mutation!(player, model)
 A local mutation is drawn from a normal distribution with mean equal to the player's z value and standard deviation equal to 0.1
-If the local mutation is out of the [0,1] interval, another value is drawn from the distribution
+A truncated normal distribution to the interval [0,1] is used to sample on a discrete `grid` representing the strategy space
 """
 function change_to_local_mutation!(player, model)
-    #new_z_value = rand(model.rng, Normal(player.z_value, 0.1))
-    new_z_value = round(rand(model.rng, Normal(player.z_value, 0.1)),digits=1)
-    if new_z_value >= 0 && new_z_value <= 1
-        player.z_value = new_z_value
-    else
-        change_to_local_mutation!(player, model)
-    end
+    #Granurality of propensity to transmit strategy space
+    grid = 0.0:0.1:1.0
+
+    #Truncate normal distribution to interval [0,1]
+    distribution = truncated(Normal(player.z_value, 0.1), 0.0, 1.0)
+    #Compute probabilities for each grid point
+    weights = pdf.(distribution,grid)
+    #Normalize
+    weights ./= sum(weights)
+    #Sample from the grid according to weights
+    player.z_value = sample(model.rng, grid, Weights(weights))
 end
 
 """

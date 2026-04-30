@@ -55,5 +55,15 @@ model = init_players(42, Model_Properties(; beta=BETA, mu=MU, b=B, d=D,
                             population_size=POPULATION_SIZE,
                             number_games_per_generation=NUMBER_GAMES_PER_GENERATION))
 player = model[1]
+# Fitness step (once per generation)
+println("Local mutation")
+@btime change_to_local_mutation!($player, $model)
+
+
+# Create a model
+model = init_players(42, Model_Properties(; beta=BETA, mu=MU, b=B, d=D, 
+                            population_size=POPULATION_SIZE,
+                            number_games_per_generation=NUMBER_GAMES_PER_GENERATION))
+player = model[1]
 # Quick allocation probe
 println(@allocated centipede_game!(player, model, Int64[]), " bytes")
