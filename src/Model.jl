@@ -123,14 +123,12 @@ function centipede_game!(current_player, model, game_array)
         if random_num_z > current_player.z_value
 
             #SET PAYOFFS NO TRANSMITTER
-            #notransmit_me_payoff = b*(d^(n-1)) --- exponential
             notransmit_me_payoff = b+(d*(n-1))
             current_player.scores_sum += notransmit_me_payoff
             current_player.scores_count += 1
 
             #SET PAYOFFS OTHERS GIVEN NO TRANSMITTER DECISION
             if n > 1
-                #notransmit_others_payoff = (d^(n-1)) --- exponential
                 notransmit_others_payoff = (d*(n-1))
 
                 #Last one in array is the one that breaks transmission
@@ -155,7 +153,7 @@ function centipede_game!(current_player, model, game_array)
             counter_available_players = 0
             for i in 1:population_size
                 if model.in_game[i] == false
-                    counter_available_players =+ 1
+                    counter_available_players += 1
                     #If this is the first available player keep it automatically (no RNG needed)
                     if counter_available_players == 1
                         chosen_random_player_id = i
@@ -170,7 +168,7 @@ function centipede_game!(current_player, model, game_array)
 
             #if all players had played, end game
             if counter_available_players == 0
-                all_end_payoff = d^n
+                all_end_payoff = d*n
                 for i in game_array
                     model[i].scores_sum += all_end_payoff
                     model[i].scores_count += 1
@@ -214,7 +212,7 @@ A local mutation is drawn from a normal distribution with mean equal to the play
 A truncated normal distribution to the interval [0,1] is used to sample on a discrete `grid` representing the strategy space
 """
 function change_to_local_mutation!(player, model)
-    #Granurality of propensity to transmit strategy space
+    #Granularity of propensity to transmit strategy space
     grid = 0.0:0.1:1.0
 
     #Truncate normal distribution to interval [0,1]
