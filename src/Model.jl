@@ -107,7 +107,7 @@ function centipede_game!(current_player, model, game_array)
     d = model.d
     population_size = model.population_size
 
-    round_counter = 1 
+    round_counter = 0
 
     while round_counter < population_size
         push!(game_array, current_player.id)
@@ -181,14 +181,6 @@ function centipede_game!(current_player, model, game_array)
         end
         round_counter += 1
         #If you didnt play, nothing happens to your score
-    end
-
-    #THE CENTIPEDE REACHES FULL LENGTH = POPULATION SIZE
-    # Payoffs of all players are assigned for end round
-    all_end_payoff = d*population_size
-    for i in game_array
-        model[i].scores_sum += all_end_payoff
-        model[i].scores_count += 1
     end
 end
 
