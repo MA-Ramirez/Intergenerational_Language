@@ -38,7 +38,6 @@ The properties of the model are:
 `population size`: population size of the WF model dynamics (part of `init_players`) - EvoDyn
 `number_games_per_generation`: number of games per strategy per WF trimming stage (part of `player_step!`)
 `game_array`: tracker. Keeps track of agent ids in a single centipede game. Starts empty, it is changed via simulation
-`in_game`: tracker. Keeps track of which players are in current game. Starts all out of game (false), it is changed via simulation
 Note: custom mutable struct is used to avoid type instability when values are not all of the same type.
 """
 Base.@kwdef mutable struct Model_Properties
@@ -48,8 +47,7 @@ Base.@kwdef mutable struct Model_Properties
     d::Float64
     population_size::Int
     number_games_per_generation::Int
-    game_array::Vector{Int} = Int[] 
-    in_game::Vector{Bool} = Bool[]
+    game_array::Vector{Int} = Int[]
 end
 
 ##################################################
@@ -70,8 +68,6 @@ function init_players(seed, all_properties::Model_Properties)
     #Preallocate game array (allocate once ever). Capacity of game_array persists across all games and WF stages
     # We use sizehint! as we will push elements in `game_array` during simulation
     sizehint!(all_properties.game_array, all_properties.population_size)
-    #Preallocates by determining length of in_game. Resize is used, as `in_game` has a fixed size during the simulation, always population_size length
-    resize!(all_properties.in_game, all_properties.population_size)
 
     #Add agents to the model with initialization properties
     for _ in 1:all_properties.population_size
@@ -111,8 +107,6 @@ function centipede_game!(current_player, model, game_array)
 
     while round_counter < population_size
         push!(game_array, current_player.id)
-        #Flip the bitmask to indicate player is in the game
-        model.in_game[current_player.id] = true
         n = length(game_array)
         random_num_z = rand(model.rng)
 
@@ -147,27 +141,11 @@ function centipede_game!(current_player, model, game_array)
             #If game continues, we add another player randomly
 
             #ADDITION OF NEW PLAYER
-            #Bitmask `in_game` + reservoir sampling algorithm
-            # used to pick randomly an available player to enter game
-            chosen_random_player_id = 0
-            counter_available_players = 0
-            for i in 1:population_size
-                if model.in_game[i] == false
-                    counter_available_players += 1
-                    #If this is the first available player keep it automatically (no RNG needed)
-                    if counter_available_players == 1
-                        chosen_random_player_id = i
-                    else
-                        # Bernoulli trial (random yes/no outcome with desired probability)
-                        if rand(model.rng, 1:counter_available_players) == 1
-                            chosen_random_player_id = i
-                        end
-                    end
-                end
-            end
+            #Elements in allids(model) that are not in game array
+            available_players_ids = setdiff(allids(model), game_array)
 
             #if all players had played, end game
-            if counter_available_players == 0
+            if isempty(available_players_ids) == true
                 all_end_payoff = d*n
                 for i in game_array
                     model[i].scores_sum += all_end_payoff
@@ -176,8 +154,9 @@ function centipede_game!(current_player, model, game_array)
                 break 
             else
                 #else continue game
-                current_player = model[chosen_random_player_id]
-            end   
+                random_player_id = rand(model.rng, available_players_ids)
+                current_player = model[random_player_id]
+            end  
         end
         round_counter += 1
         #If you didnt play, nothing happens to your score
@@ -249,7 +228,6 @@ function player_step!(player, model)
     # all elements start as false, element become true if player enters the game
     for i in 1:model.number_games_per_generation
         empty!(model.game_array)
-        fill!(model.in_game, false)
         centipede_game!(player, model, model.game_array)
     end
 end
@@ -321,6 +299,6 @@ function model_WF_step!(model)
     #        data = DataFrame("beta"=>[model.beta],"z_value" => [agent.z_value], "mean_score"=>[mean(agent.scores)])
     #        CSV.write(datadir("payoffs_"*string(model.beta)*".csv"), data, append=true)
     #end
-    calculate_fitness_linear(model)
+    calculate_fitness_exponential(model)
     sample!(model, nagents(model), :fitness)
 end
