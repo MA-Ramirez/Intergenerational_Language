@@ -42,13 +42,15 @@ function run_simulation(counter)
 
     params = Dict(:seed => counter,
                   #Linear mapping
-                  :beta => [0.01,0.2,0.4,0.6,0.8,1.0],
-                  #Exponential mapping
-                  #:beta => [0.01,0.1,1.0,10.0],
-                  :mu => 0.01,
+                  #:beta => [0.01,0.2,0.4,0.6,0.8,1.0],
 
-                  :b => 4.0,
-                  :d => 3.0)
+                  #Exponential mapping
+                  :beta => collect(0.0:1.0:10.0),
+                  :d => collect(0.0:0.5:3.0),
+
+                  :mu => 0.01,
+                  
+                  :b => 4.0)
 
     t1 = time()
 
@@ -63,7 +65,9 @@ function run_simulation(counter)
     running_time = time() - t1
     println("Running time : ", running_time, " seconds")
 
-    CSV.write(datadir("data_"*string(counter)*".csv"), adata)
+    filename = savename("data", params, "csv")
+    #data_b=4.0_mu=0.01_seed=7.csv
+    CSV.write(datadir("sims","d_beta",filename), adata)
 end
 
 ###################################
